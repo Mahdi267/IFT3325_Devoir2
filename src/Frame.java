@@ -1,9 +1,10 @@
 public class Frame {
     private byte[] flag = {0b01111110};
     private char type;
-    private byte[] num;
+    private byte[] num; // numéro encodé sur 3 bits
     private byte[] data;
     private CRC crc;
+    private static final int crc_ccitt = 0b10001000000100001;
 
     // Constructor
     public Frame(char type, byte[] num, byte[] data, CRC crc) {
@@ -11,6 +12,26 @@ public class Frame {
         this.num = num;
         this.data = data;
         this.crc = crc;
+    }
+
+    // Methods
+    public int computeCRC(){
+        return 0;
+    }
+
+    public void applyBitStuffing(){
+
+    }
+
+    public void removeBitStuffing(){
+
+    }
+
+    public void convertToByte(){
+
+    }
+
+    public void buildFrameFromBytes(){
     }
 
     // Getter et Setter
