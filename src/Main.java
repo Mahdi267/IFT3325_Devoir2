@@ -14,5 +14,7 @@ public class Main {
 
         Frame frame = new Frame(type, num, data, crc);
         System.out.println(frame);
+
+        
     }
 }

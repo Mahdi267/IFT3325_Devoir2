@@ -40,15 +40,23 @@ public class Frame {
     }
 
     public void applyBitStuffing(){
+        this.data = BitStuffing.applyBitStuffing(this.data);
 
     }
 
     public void removeBitStuffing(){
-
+        this.data = BitStuffing.removeBitStuffing(this.data);
     }
 
-    public void convertToByte(){
-
+    public void convertToByte() {
+        // Add this method to Frame class
+        if (isBinaryString(this.data)) {
+            byte[] dataBytes = BitStuffing.binaryStringToBytes(this.data);
+            // Do something with bytes...
+        }
+    }
+    private boolean isBinaryString(String data) {
+        return data.matches("[01]+");
     }
 
     public String buildFrameFromBytes(){
