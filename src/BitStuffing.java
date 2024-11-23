@@ -68,7 +68,6 @@ public class BitStuffing {
         return data.matches("[01]+");
     }
 
-
     public static byte[] binaryStringToBytes(String binaryString) {
         if (!isBinaryString(binaryString)) {
             throw new IllegalArgumentException("La chaîne doit être binaire (contenir uniquement des '0' et des '1')");
@@ -77,11 +76,7 @@ public class BitStuffing {
         // Ajouter du padding si nécessaire pour avoir un multiple de 8 bits
         int padding = 8 - (binaryString.length() % 8);
         if (padding != 8) {
-            StringBuilder paddedString = new StringBuilder(binaryString);
-            for (int i = 0; i < padding; i++) {
-                paddedString.append('0');
-            }
-            binaryString = paddedString.toString();
+            binaryString = binaryString + "0".repeat(padding);
         }
 
         byte[] bytes = new byte[binaryString.length() / 8];
@@ -92,7 +87,6 @@ public class BitStuffing {
 
         return bytes;
     }
-
 
     public static String bytesToBinaryString(byte[] bytes) {
         StringBuilder binaryString = new StringBuilder();

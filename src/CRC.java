@@ -2,9 +2,21 @@ public class CRC {
     // CRC-CCITT (x^16 + x^12 + x^5 +1), pour faire la division
     private static final String crc_ccitt = "10001000000100001";
     private static final int crc_ccitt_length = crc_ccitt.length();
+    private String crcBits;
 
     // Constructor
     public CRC(){}
+
+    // Getter et Setter
+    public String getCrcBits() {
+        return crcBits;
+    }
+    public void setCrcBits(String crcBits) {
+        if (crcBits.length() != 16 || !crcBits.matches("[01]+")) {
+            throw new IllegalArgumentException("CRC invalide.");
+        }
+        this.crcBits = crcBits;
+    }
 
     // Permet d'effectuer l'oppération Xor
     static String Xor (String a, String b) {
@@ -53,6 +65,9 @@ public class CRC {
         // Ajouter les zéros nécessaires à la fin de la chaîne
         String binaryData = data + "0".repeat(zerosToAdd);
 
-        return String.format("%16s", Mod2Div(binaryData)).replace(' ', '0');
+        String computedCRC = String.format("%16s", Mod2Div(binaryData)).replace(' ', '0');
+        this.crcBits = computedCRC;
+
+        return computedCRC;
     }
 }
