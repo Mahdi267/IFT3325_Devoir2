@@ -1,8 +1,9 @@
 import java.io.*;
 import java.net.*;
+import java.util.Arrays;
 
 public class MainTest {
-    public static void main(String[] args) {
+    public static void main(String[] args){
         testBitStuffing();
         testFrameCreation();
         testBasicCRC();
@@ -41,150 +42,216 @@ public class MainTest {
         System.out.println("Stuffed: " + stuffed3);
         String unstuffed3 = BitStuffing.removeBitStuffing(stuffed3);
         System.out.println("Test 3 " + (test3.equals(unstuffed3) ? "PASSED" : "FAILED"));
+
+        // Test case 4: Chaîne vide
+        String test4 = "";
+        System.out.println("\nTest 4 - Original: \"" + test4 + "\"");
+        String stuffed4 = BitStuffing.applyBitStuffing(test4);
+        System.out.println("Stuffed: \"" + stuffed4 + "\"");
+        String unstuffed4 = BitStuffing.removeBitStuffing(stuffed4);
+        System.out.println("Unstuffed: \"" + unstuffed4 + "\"");
+        System.out.println("Test 4 " + (test4.equals(unstuffed4) ? "PASSED" : "FAILED"));
     }
 
     private static void testFrameCreation() {
         System.out.println("\n=== Test Frame Creation ===");
-        CRC crc = new CRC();
+        try {
+            // Création d'un objet CRC
+            CRC crc = new CRC();
 
-        // Test case 1: Frame normale
-        Frame frame1 = new Frame((byte)'I', '1', "10101010", crc);
-        System.out.println("\nTest Frame 1 - Before Bit Stuffing:");
-        System.out.println(frame1);
-        frame1.applyBitStuffing();
-        System.out.println("After Bit Stuffing:");
-        System.out.println(frame1);
-        frame1.removeBitStuffing();
-        System.out.println("After Removing Bit Stuffing:");
-        System.out.println(frame1);
+            // Exemple de données à envoyer
+            String data = "Hello";
+            String dataBinary = stringToBinary(data); // Convertir "Hello" en binaire
 
-        // Test case 2: Frame avec une séquence nécessitant bit stuffing
-        Frame frame2 = new Frame((byte)'I', '2', "11111010", crc);
-        System.out.println("\nTest Frame 2 - Before Bit Stuffing:");
-        System.out.println(frame2);
-        frame2.applyBitStuffing();
-        System.out.println("After Bit Stuffing:");
-        System.out.println(frame2);
-        frame2.removeBitStuffing();
-        System.out.println("After Removing Bit Stuffing:");
-        System.out.println(frame2);
+            // Création d'une trame d'information
+            byte type = 'I'; // Trame d'information
+            byte num = 3; // Numéro de trame
 
-        // Test case 3: Frame de connexion
-        Frame frame3 = new Frame((byte)'C', "00000000", crc);
-        System.out.println("\nTest Frame 3 - Connection Frame:");
-        System.out.println(frame3);
-        
-        // Test case 4: Test buildFrameFromBytes
-        Frame frame4 = new Frame((byte)'I', '3', "11111111", crc);
-        System.out.println("\nTest Frame 4 - Complete Frame:");
-        System.out.println("Frame as binary string:");
-        System.out.println(frame4.buildFrameFromBytes());
+            Frame frame = new Frame(type, num, dataBinary, crc);
+            String serializedFrame = frame.buildFrameFromBytes();
+            System.out.println("Trame sérialisée avec bit stuffing : " + serializedFrame);
+
+            // Désérialisation de la trame
+            Frame deserializedFrame = Frame.unBuildFrame(serializedFrame);
+            System.out.println("Trame désérialisée : " + deserializedFrame);
+
+            // Vérifier l'intégrité
+            boolean isPassed = frame.getType() == deserializedFrame.getType() &&
+                    frame.getNum() == deserializedFrame.getNum() &&
+                    frame.getData().equals(deserializedFrame.getData()) &&
+                    frame.getCrc().getCrcBits().equals(deserializedFrame.getCrc().getCrcBits());
+
+            System.out.println("Test Frame Creation " + (isPassed ? "PASSED" : "FAILED"));
+        } catch (Exception e) {
+            System.out.println("Test Frame Creation FAILED with exception:");
+            e.printStackTrace();
+        }
     }
+
     private static void testBasicCRC() {
         System.out.println("\n=== Test Basic CRC ===");
-        CRC crc = new CRC();
-        
-        // Test avec une chaîne simple
-        String data1 = "1010";
-        String result1 = crc.computeCRC(data1);
-        System.out.println("Test 1 - Data: " + data1);
-        System.out.println("CRC: " + result1);
-        System.out.println("CRC Length: " + result1.length() + " (should be 16)");
-        System.out.println("Test 1 " + (result1.length() == 16 ? "PASSED" : "FAILED"));
-        
-        // Test avec une chaîne plus longue
-        String data2 = "10101010101010101";
-        String result2 = crc.computeCRC(data2);
-        System.out.println("\nTest 2 - Data: " + data2);
-        System.out.println("CRC: " + result2);
-        System.out.println("Test 2 " + (result2.length() == 16 ? "PASSED" : "FAILED"));
+        try {
+            CRC crc = new CRC();
+
+            // Données simples
+            String data = "1101";
+            String expectedCRC = "1101000110101101"; // CRC calculé manuellement pour ce petit exemple
+
+            String computedCRC = crc.computeCRC(data);
+            System.out.println("Données: " + data);
+            System.out.println("CRC Calculé: " + computedCRC);
+            System.out.println("Test Basic CRC " + (computedCRC.equals(expectedCRC) ? "PASSED" : "FAILED"));
+        } catch (Exception e) {
+            System.out.println("Test Basic CRC FAILED with exception:");
+            e.printStackTrace();
+        };
     }
 
     private static void testZeroData() {
         System.out.println("\n=== Test Zero Data ===");
-        CRC crc = new CRC();
-        
-        // Test avec une chaîne de zéros
-        String data = "0000000";
-        String result = crc.computeCRC(data);
-        System.out.println("Data: " + data);
-        System.out.println("CRC: " + result);
-        System.out.println("Test " + (result.length() == 16 ? "PASSED" : "FAILED"));
+        try {
+            CRC crc = new CRC();
+            String data = ""; // Pas de données
+            String dataBinary = stringToBinary(data);
+
+            byte type = 'C'; // Trame de connexion
+            byte num = 0;
+
+            Frame frame = new Frame(type, num, dataBinary, crc);
+            String serializedFrame = frame.buildFrameFromBytes();
+            System.out.println("Trame sérialisée avec bit stuffing (Zero Data) : " + serializedFrame);
+
+            // Désérialisation
+            Frame deserializedFrame = Frame.unBuildFrame(serializedFrame);
+            System.out.println("Trame désérialisée : " + deserializedFrame);
+
+            // Vérifier l'intégrité
+            boolean isPassed = frame.getType() == deserializedFrame.getType() &&
+                    frame.getNum() == deserializedFrame.getNum() &&
+                    frame.getData().equals(deserializedFrame.getData()) &&
+                    frame.getCrc().getCrcBits().equals(deserializedFrame.getCrc().getCrcBits());
+
+            System.out.println("Test Zero Data " + (isPassed ? "PASSED" : "FAILED"));
+        } catch (Exception e) {
+            System.out.println("Test Zero Data FAILED with exception:");
+            e.printStackTrace();
+        }
     }
 
     private static void testAllOnes() {
         System.out.println("\n=== Test All Ones ===");
-        CRC crc = new CRC();
-        
-        // Test avec une chaîne de uns
-        String data = "11111111";
-        String result = crc.computeCRC(data);
-        System.out.println("Data: " + data);
-        System.out.println("CRC: " + result);
-        System.out.println("Test " + (result.length() == 16 ? "PASSED" : "FAILED"));
+        try {
+            CRC crc = new CRC();
+
+            // Données avec beaucoup de '1' consécutifs
+            String data = "1111111";
+            String dataBinary = data; // Données déjà en binaire
+
+            byte type = 'I';
+            byte num = 7;
+
+            Frame frame = new Frame(type, num, dataBinary, crc);
+            String serializedFrame = frame.buildFrameFromBytes();
+            System.out.println("Trame sérialisée avec bit stuffing (All Ones) : " + serializedFrame);
+
+            // Désérialisation
+            Frame deserializedFrame = Frame.unBuildFrame(serializedFrame);
+            System.out.println("Trame désérialisée : " + deserializedFrame);
+
+            // Vérifier l'intégrité
+            boolean isPassed = frame.getType() == deserializedFrame.getType() &&
+                    frame.getNum() == deserializedFrame.getNum() &&
+                    frame.getData().equals(deserializedFrame.getData()) &&
+                    frame.getCrc().getCrcBits().equals(deserializedFrame.getCrc().getCrcBits());
+
+            System.out.println("Test All Ones " + (isPassed ? "PASSED" : "FAILED"));
+        } catch (Exception e) {
+            System.out.println("Test All Ones FAILED with exception:");
+            e.printStackTrace();
+        }
     }
 
     private static void testKnownValues() {
         System.out.println("\n=== Test Known Values ===");
-        CRC crc = new CRC();
-        
-        // Test avec des valeurs connues
-        String[][] testCases = {
-            {"1100", "1100110011001100"},  
-            {"1010", "1010101010101010"},  
-            {"1111", "1111000011110000"}   
-        };
+        try {
+            CRC crc = new CRC();
 
-        for (int i = 0; i < testCases.length; i++) {
-            String data = testCases[i][0];
-            String expectedCRC = testCases[i][1];
-            String result = crc.computeCRC(data);
-            System.out.println("\nTest " + (i + 1) + " - Data: " + data);
-            System.out.println("Expected CRC: " + expectedCRC);
-            System.out.println("Actual CRC:   " + result);
-            System.out.println("Test " + (i + 1) + " " + 
-                (result.length() == 16 ? "PASSED" : "FAILED (wrong length)"));
+            // Exemple 1
+            String data1 = "11010011101100";
+            String expectedCRC1 = "1111010111110011"; // CRC attendu à définir selon le polynôme
+
+            String computedCRC1 = crc.computeCRC(data1);
+            System.out.println("Données: " + data1);
+            System.out.println("CRC Calculé: " + computedCRC1);
+            System.out.println("Test Known Values 1 " + (computedCRC1.equals(expectedCRC1) ? "PASSED" : "FAILED"));
+
+            // Exemple 2
+            String data2 = "1010101010101010";
+            String expectedCRC2 = "1110011000010101"; // CRC attendu à définir
+
+            String computedCRC2 = crc.computeCRC(data2);
+            System.out.println("\nDonnées: " + data2);
+            System.out.println("CRC Calculé: " + computedCRC2);
+            System.out.println("Test Known Values 2 " + (computedCRC2.equals(expectedCRC2) ? "PASSED" : "FAILED"));
+        } catch (Exception e) {
+            System.out.println("Test Known Values FAILED with exception:");
+            e.printStackTrace();
         }
     }
 
     private static void testXorOperation() {
         System.out.println("\n=== Test XOR Operation ===");
-        
-        // Test de l'opération XOR avec des cas connus
-        String a = "1010";
-        String b = "1100";
-        String expected = "0110";
-        String result = CRC.Xor(a, b);
-        
-        System.out.println("XOR Test:");
-        System.out.println("a:        " + a);
-        System.out.println("b:        " + b);
-        System.out.println("Expected: " + expected);
-        System.out.println("Result:   " + result);
-        System.out.println("Test " + (result.equals(expected) ? "PASSED" : "FAILED"));
+        try {
+            // Exemple simple
+            String a = "1101";
+            String b = "1011";
+            String expected = "0110"; // 1^1=0, 1^0=1, 0^1=1, 1^1=0
+
+            String result = CRC.Xor(a, b);
+            System.out.println("A: " + a);
+            System.out.println("B: " + b);
+            System.out.println("A XOR B: " + result);
+            System.out.println("Test XOR Operation " + (result.equals(expected) ? "PASSED" : "FAILED"));
+        } catch (Exception e) {
+            System.out.println("Test XOR Operation FAILED with exception:");
+            e.printStackTrace();
+        }
     }
 
     private static void testMod2Div() {
-        System.out.println("\n=== Test Mod2Div Operation ===");
-        
-        // Il faut que le dividend soit plus long que le diviseur (17 bits)
-        // Ajoutons les 16 bits de zéros nécessaires pour le CRC
-        String dividend = "11010101" + "0000000000000000";  // Ajout de 16 zéros
-        String result = CRC.Mod2Div(dividend);
-        
-        System.out.println("Mod2Div Test:");
-        System.out.println("Original data: 11010101");
-        System.out.println("Padded dividend: " + dividend);
-        System.out.println("Result: " + result);
-        System.out.println("Result length: " + result.length());
-        System.out.println("Test " + (result.length() == 16 ? "PASSED" : "FAILED"));
+        System.out.println("\n=== Test Mod2Div ===");
+        try {
+            // Utiliser un CRC avec un polynôme connu
+            CRC crc = new CRC();
 
-        CRC crc = new CRC();
-        String crcResult = crc.computeCRC("11010101");
-        System.out.println("\nComparison with computeCRC:");
-        System.out.println("Mod2Div result:    " + result);
-        System.out.println("ComputeCRC result: " + crcResult);
-        System.out.println("Comparison test " + 
-            (result.equals(crcResult) ? "PASSED" : "FAILED"));
+            // Exemple 1
+            String dividend1 = "11010011101100" + "0000000000000000"; // Ajouter 16 zéros
+            String expectedRemainder1 = "1111010111110011"; // À définir selon le polynôme
+
+            String remainder1 = CRC.Mod2Div(dividend1);
+            System.out.println("Dividend: " + dividend1);
+            System.out.println("Remainder Calculé: " + remainder1);
+            System.out.println("Test Mod2Div 1 " + (remainder1.equals(expectedRemainder1) ? "PASSED" : "FAILED"));
+
+            // Exemple 2
+            String dividend2 = "1010101010101010" + "0000000000000000"; // Ajouter 16 zéros
+            String expectedRemainder2 = "1110011000010101"; // À définir selon le polynôme
+
+            String remainder2 = CRC.Mod2Div(dividend2);
+            System.out.println("\nDividend: " + dividend2);
+            System.out.println("Remainder Calculé: " + remainder2);
+            System.out.println("Test Mod2Div 2 " + (remainder2.equals(expectedRemainder2) ? "PASSED" : "FAILED"));
+        } catch (Exception e) {
+            System.out.println("Test Mod2Div FAILED with exception:");
+            e.printStackTrace();
+        }
+    }
+
+    private static String stringToBinary(String input) {
+        StringBuilder binary = new StringBuilder();
+        for (char c : input.toCharArray()) {
+            binary.append(String.format("%8s", Integer.toBinaryString(c)).replace(' ', '0'));
+        }
+        return binary.toString();
     }
 }
