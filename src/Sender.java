@@ -18,6 +18,7 @@ public class Sender {
     private OutputStream out;
     private InputStream in;
     private byte[] buffer;
+    private Thread ackListenerThread;
 
     public Sender() {
         this.nextFrameToSend = 0;
@@ -26,9 +27,7 @@ public class Sender {
         this.isConnected = false;
         this.buffer = new byte[1024];
         this.timer = new Timer(TIMEOUT);
-        this.timer.setTimeoutHandler(() -> {
-            handleTimeout();
-        });
+        this.timer.setTimeoutHandler(this::handleTimeout);
     }
 
     public void initialize(String hostName, int port, String filename) {
@@ -44,14 +43,14 @@ public class Sender {
     }
 
     private void handleTimeout() {
-        System.out.println("Timeout - Resending frames from " + base + " to " + (nextFrameToSend-1));
+        System.out.println("Timeout - Resending frames from " + base + " to " + (nextFrameToSend - 1));
         for (int i = base; i < nextFrameToSend; i++) {
             if (window[i % WINDOW_SIZE] != null) {
                 try {
                     String frameString = window[i % WINDOW_SIZE].buildFrameFromBytes();
                     out.write(frameString.getBytes());
                     out.flush();
-                    System.out.println("Resent frame " + (window[i % WINDOW_SIZE].getNum() - '0'));
+                    System.out.println("Resent frame " + (window[i % WINDOW_SIZE].getNum() & 0b00000111));
                 } catch (IOException e) {
                     System.out.println("Error resending frame: " + e.getMessage());
                 }
@@ -89,6 +88,11 @@ public class Sender {
     public void readData() {
         if (!isConnected) {
             connect();
+            if (!isConnected) {
+                System.out.println("Unable to establish connection. Exiting.");
+                return;
+            }
+            startAckListener(); // Démarrer le listener des ACK après la connexion
         }
 
         try (BufferedReader fileReader = new BufferedReader(new FileReader(filename))) {
@@ -96,16 +100,20 @@ public class Sender {
             while ((line = fileReader.readLine()) != null && isConnected) {
                 String binaryData = stringToBinary(line);
 
-                while (!canSendNextFrame()) {
-                    waitForAck();
+                // Envoyer autant de trames que possible jusqu'à remplir la fenêtre
+                while (canSendNextFrame() && (line != null)) {
+                    byte num = (byte) (nextFrameToSend % WINDOW_SIZE);
+                    Frame frame = new Frame((byte) 'I', num, binaryData, new CRC());
+                    sendFrame(frame);
+                    line = fileReader.readLine();
+                    if (line != null) {
+                        binaryData = stringToBinary(line);
+                    }
                 }
-
-                Frame frame = new Frame((byte)'I', (char)('0' + (nextFrameToSend % 8)), binaryData, new CRC());
-                sendFrame(frame);
             }
 
             // Envoyer la trame de fin
-            Frame endFrame = new Frame((byte)'F', (char)'0', "", new CRC());
+            Frame endFrame = new Frame((byte) 'F', (byte) 0, "", new CRC());
             sendFrame(endFrame);
 
         } catch (IOException e) {
@@ -124,9 +132,8 @@ public class Sender {
         return result.toString();
     }
 
-    public void sendFrame(Frame frame) {
+    public synchronized void sendFrame(Frame frame) {
         try {
-            frame.applyBitStuffing();
             String frameString = frame.buildFrameFromBytes();
             byte[] frameBytes = frameString.getBytes();
             out.write(frameBytes);
@@ -134,7 +141,7 @@ public class Sender {
 
             if (frame.getType() == 'I') {
                 window[nextFrameToSend % WINDOW_SIZE] = frame;
-                System.out.println("Sent I-frame " + (frame.getNum() - '0') +
+                System.out.println("Sent I-frame " + (frame.getNum() & 0b00000111) +
                         " (Data length: " + frame.getData().length() + ")");
 
                 if (base == nextFrameToSend) {
@@ -142,95 +149,74 @@ public class Sender {
                 }
                 nextFrameToSend++;
 
-                // Attendre l'ACK
-                boolean ackReceived = waitForAck();
-                if (!ackReceived) {
-                    System.out.println("No ACK received, will retransmit");
-                }
+                // Ne pas attendre l'ACK ici ; continuer à envoyer des trames dans la fenêtre
             } else {
                 System.out.println("Sent control frame: Type=" + (char)frame.getType() +
-                        ", Num=" + (frame.getNum() - '0'));
+                        ", Num=" + (frame.getNum() & 0b00000111));
 
                 if (frame.getType() == 'C') {
                     waitForConnectionAck();
                 }
             }
 
-            Thread.sleep(100);
-
         } catch (IOException e) {
             System.out.println("Error sending frame: " + e.getMessage());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 
-    private boolean waitForConnectionAck() {
-        long startTime = System.currentTimeMillis();
-        while (System.currentTimeMillis() - startTime < TIMEOUT) {
-            Frame ackFrame = receiveFrame();
-            if (ackFrame != null && ackFrame.getType() == 'A') {
-                System.out.println("Connection acknowledged");
-                isConnected = true;
-                return true;
-            }
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
-        return false;
-    }
-
-    private boolean waitForAck() {
-        long startTime = System.currentTimeMillis();
-        while (System.currentTimeMillis() - startTime < TIMEOUT) {
-            Frame response = receiveFrame();
-            if (response != null) {
-                if (response.getType() == 'A') {
-                    int ackNum = response.getNum() - '0';
-                    System.out.println("Received ACK for frame " + ackNum);
-                    base = (ackNum + 1) % 8;
-                    if (base == nextFrameToSend) {
-                        timer.stop();
-                    } else {
-                        timer.stop();
-                        timer.start();
+    private void startAckListener() {
+        ackListenerThread = new Thread(() -> {
+            while (isConnected) {
+                Frame response = receiveFrame();
+                if (response != null) {
+                    if (response.getType() == 'A') {
+                        handleAck(response);
+                    } else if (response.getType() == 'R') {
+                        handleRejection(response);
                     }
-                    return true;
-                } else if (response.getType() == 'R') {
-                    handleRejection(response);
-                    return true;
+                }
+                try {
+                    Thread.sleep(10); // Petite pause
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             }
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
-            }
-        }
-        return false;
+        });
+        ackListenerThread.start();
     }
 
-    private void handleRejection(Frame rejFrame) {
-        int rejNum = rejFrame.getNum() - '0';
+    private synchronized void handleAck(Frame ackFrame) {
+        int ackNum = ackFrame.getNum() & 0b00000111;
+        System.out.println("Received ACK for frame " + ackNum);
+        if ((base <= ackNum && ackNum < nextFrameToSend) ||
+                (base > nextFrameToSend && (ackNum < nextFrameToSend || ackNum >= base))) {
+            base = (ackNum + 1) % WINDOW_SIZE;
+            if (base == nextFrameToSend) {
+                timer.stop();
+            } else {
+                timer.stop();
+                timer.start();
+            }
+        }
+    }
+
+    private synchronized void handleRejection(Frame rejFrame) {
+        int rejNum = rejFrame.getNum() & 0b00000111;
         System.out.println("Received REJ for frame " + rejNum);
         timer.stop();
-        nextFrameToSend = rejNum; // PROBLÈME ?
+        base = rejNum;
+        nextFrameToSend = rejNum;
 
-        // Retransmettre à partir de rejNum
+        // Retransmettre les trames à partir de rejNum
         System.out.println("Retransmitting from frame " + rejNum);
-        for (int i = rejNum; i < nextFrameToSend; i++) {
+        for (int i = base; i < base + WINDOW_SIZE && i < nextFrameToSend; i++) {
             Frame frame = window[i % WINDOW_SIZE];
             if (frame != null) {
                 try {
-                    frame.applyBitStuffing();
-                    out.write(frame.buildFrameFromBytes().getBytes());
+                    String frameString = frame.buildFrameFromBytes();
+                    out.write(frameString.getBytes());
                     out.flush();
-                    System.out.println("Retransmitted frame " + (frame.getNum() - '0'));
+                    System.out.println("Retransmitted frame " + (frame.getNum() & 0b00000111));
                 } catch (IOException e) {
                     System.out.println("Error retransmitting frame: " + e.getMessage());
                 }
@@ -239,51 +225,53 @@ public class Sender {
         timer.start();
     }
 
+    private void waitForConnectionAck() {
+        long startTime = System.currentTimeMillis();
+        while (System.currentTimeMillis() - startTime < TIMEOUT) {
+            try {
+                Frame ackFrame = receiveFrame();
+                if (ackFrame != null && ackFrame.getType() == 'A') {
+                    System.out.println("Connection acknowledged");
+                    isConnected = true;
+                    return;
+                }
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
     public Frame receiveFrame() {
         try {
             if (in.available() > 0) {
                 int bytesRead = in.read(buffer);
                 if (bytesRead > 0) {
                     String frameData = new String(buffer, 0, bytesRead);
-                    return parseFrameData(frameData);
+                    return Frame.unBuildFrame(frameData);
                 }
             }
         } catch (IOException e) {
             System.out.println("Error receiving frame: " + e.getMessage());
-        }
-        return null;
-    }
-
-    private Frame parseFrameData(String frameData) {
-        try {
-            if (!frameData.startsWith("01111110") || !frameData.endsWith("01111110")) {
-                return null;
-            }
-
-            String data = frameData.substring(8, frameData.length() - 8);
-            String typeBits = data.substring(0, 8);
-            byte type = (byte) Integer.parseInt(typeBits, 2);
-            String numBits = data.substring(8, 11);
-            char num = (char)('0' + Integer.parseInt(numBits, 2));
-            String payload = data.substring(11, data.length() - 16);
-
-            Frame frame = new Frame(type, num, payload, new CRC());
-            frame.removeBitStuffing(); // ENLEVER LE BIT STUFFING AVANT ?
-            return frame;
-
         } catch (Exception e) {
             System.out.println("Error parsing frame: " + e.getMessage());
-            return null;
         }
+        return null;
     }
 
     private boolean canSendNextFrame() {
         return (nextFrameToSend - base) < WINDOW_SIZE;
     }
 
-    public void close() {
+    public synchronized void close() {
         try {
+            isConnected = false;
             timer.stop();
+            if (ackListenerThread != null) {
+                ackListenerThread.interrupt();
+                ackListenerThread = null;
+            }
             if (out != null) {
                 out.flush();
                 out.close();

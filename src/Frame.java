@@ -13,6 +13,13 @@ public class Frame {
         this.crc = crc;
     }
 
+    public Frame(byte type, String data, CRC crc) {
+        this.type = type;
+        this.data = data;
+        this.crc = crc;
+        this.num = 0;
+    }
+
     // Methods
     static String combineToBinaryString(byte type, byte num, String data) {
         // Convertir 'type' en binaire sur 8 bits
@@ -20,7 +27,7 @@ public class Frame {
         // Ajouter les données dans la chaîne binaire
         return String.format("%8s", Integer.toBinaryString(type & 0xFF))
                 .replace(" ", "0") +
-                String.format("%8s", Integer.toBinaryString(num & 0xFF))
+                String.format("%8s", Integer.toBinaryString(num & 0x07))
                         .replace(" ", "0") +
                 data;
     }
