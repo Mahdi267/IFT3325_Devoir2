@@ -1,0 +1,3 @@
+Première ligne de test
+Deuxième ligne avec 11111 pour tester le bit stuffing
+Troisième ligne
