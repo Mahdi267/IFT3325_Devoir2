@@ -4,14 +4,37 @@ import java.util.Arrays;
 
 public class MainTest {
     public static void main(String[] args){
-        testBitStuffing();
-        testFrameCreation();
-        testBasicCRC();
-        testZeroData();
-        testAllOnes();
-        testKnownValues();
-        testXorOperation();
-        testMod2Div();
+        if (args.length > 0) {
+            // Si des arguments sont fournis, exécuter en mode commande
+            if (args[0].equalsIgnoreCase("sender")) {
+                // Format: sender <hostname> <port> <filename> <0>
+                if (args.length != 5) {
+                    System.out.println("Usage: java MainTest sender <hostname> <port> <filename> <0>");
+                    return;
+                }
+                String[] senderArgs = {args[1], args[2], args[3], args[4]};
+                Sender.main(senderArgs);
+            } else if (args[0].equalsIgnoreCase("receiver")) {
+                // Format: receiver <port>
+                if (args.length != 2) {
+                    System.out.println("Usage: java MainTest receiver <port>");
+                    return;
+                }
+                String[] receiverArgs = {args[1]};
+                Receiver.main(receiverArgs);
+            } else {
+                System.out.println("Invalid mode. Use 'sender' or 'receiver'.");
+            }
+        } else {
+            testBitStuffing();
+            testFrameCreation();
+            testBasicCRC();
+            testZeroData();
+            testAllOnes();
+            testKnownValues();
+            testXorOperation();
+            testMod2Div();
+        }
     }
 
     private static void testBitStuffing() {
@@ -144,8 +167,7 @@ public class MainTest {
             CRC crc = new CRC();
 
             // Données avec beaucoup de '1' consécutifs
-            String data = "1111111";
-            String dataBinary = data; // Données déjà en binaire
+            String dataBinary = "1111111"; // Données déjà en binaire
 
             byte type = 'I';
             byte num = 7;
@@ -253,5 +275,121 @@ public class MainTest {
             binary.append(String.format("%8s", Integer.toBinaryString(c)).replace(' ', '0'));
         }
         return binary.toString();
+    }
+    private static volatile boolean receiverReady = false;
+    private static volatile boolean communicationCompleted = false;
+
+    public static void testCommunication() {
+        System.out.println("\n=== Test Communication Protocol ===");
+
+        final String hostname = "localhost";
+        final int port = 12345;
+        final String filename = "test.txt";
+
+        // Créer le fichier de test
+        createTestFile(filename);
+        System.out.println("Test file created: " + filename);
+
+        // Démarrer le Receiver dans un thread séparé
+        Thread receiverThread = new Thread(() -> {
+            try {
+                System.out.println("Starting receiver...");
+                Receiver receiver = new Receiver();
+                receiver.initialize(port);
+                receiverReady = true;
+
+                System.out.println("Receiver waiting for connection...");
+                receiver.acceptConnection();
+                System.out.println("Receiver connected");
+
+                while (true) {
+                    Frame frame = receiver.receiveFrame();
+                    if (frame == null) continue;
+
+                    receiver.processFrame(frame);
+
+                    if (frame.getType() == 'F') {
+                        System.out.println("End of transmission received");
+                        communicationCompleted = true;
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                System.out.println("Receiver error: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+        receiverThread.start();
+
+        // Attendre que le receiver soit prêt
+        while (!receiverReady) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        // Démarrer le Sender dans un thread séparé
+        Thread senderThread = new Thread(() -> {
+            try {
+                System.out.println("Starting sender...");
+                Sender sender = new Sender();
+                sender.initialize(hostname, port, filename);
+                sender.readData();
+            } catch (Exception e) {
+                System.out.println("Sender error: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+        senderThread.start();
+
+        // Attendre la fin de la communication avec timeout
+        long startTime = System.currentTimeMillis();
+        long timeout = 15000; // 15 seconds timeout
+
+        while (!communicationCompleted && (System.currentTimeMillis() - startTime) < timeout) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+        if (!communicationCompleted) {
+            System.out.println("WARNING: Communication test timed out after 15 seconds");
+        } else {
+            System.out.println("Communication test completed successfully");
+        }
+
+        // Nettoyage
+        try {
+            senderThread.join(1000);
+            receiverThread.join(1000);
+            File testFile = new File(filename);
+            if (testFile.exists()) {
+                if (testFile.delete()) {
+                    System.out.println("Test file deleted: " + filename);
+                } else {
+                    System.out.println("Failed to delete test file: " + filename);
+                }
+            }
+            System.out.println("Test cleanup completed");
+        } catch (InterruptedException e) {
+            System.out.println("Cleanup was interrupted");
+            e.printStackTrace();
+        }
+    }
+
+    private static void createTestFile(String filename) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(filename))) {
+            writer.println("Première ligne de test");
+            writer.println("Deuxième ligne avec 11111 pour tester le bit stuffing");
+            writer.println("Troisième ligne pour tester Go-Back-N");
+            System.out.println("Test file created successfully");
+        } catch (IOException e) {
+            System.out.println("Error creating test file: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
