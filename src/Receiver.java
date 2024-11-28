@@ -35,31 +35,54 @@ public class Receiver {
     }
 
     public Frame receiveFrame() {
-        if (!isConnected || !running) return null;
-
         try {
-            int bytesRead = in.read(buffer);
-            if (bytesRead > 0) {
-                String frameData = new String(buffer, 0, bytesRead);
-                System.out.println("Received raw frame: " + frameData);
-                Frame frame = Frame.unBuildFrame(frameData);
-                if (frame != null) {
-                    return frame;
+            ByteArrayOutputStream frameBuffer = new ByteArrayOutputStream();
+            int b;
+            boolean startFlagFound = false;
+
+            // Read until start FLAG
+            while ((b = in.read()) != -1) {
+                if ((byte) b == Frame.FLAG) {
+                    startFlagFound = true;
+                    break;
                 }
             }
-        } catch (SocketException se) {
-            if (running) {
-                System.out.println("Connection lost: " + se.getMessage());
-                running = false;
+
+            if (!startFlagFound) {
+                return null;
             }
+
+            // Read until end FLAG
+            while ((b = in.read()) != -1) {
+                if ((byte) b == Frame.FLAG) {
+                    break;
+                }
+                frameBuffer.write(b);
+            }
+
+            byte[] frameContent = frameBuffer.toByteArray();
+            byte[] fullFrame = new byte[frameContent.length + 2];
+            fullFrame[0] = Frame.FLAG;
+            System.arraycopy(frameContent, 0, fullFrame, 1, frameContent.length);
+            fullFrame[fullFrame.length - 1] = Frame.FLAG;
+
+            return Frame.parseFrame(fullFrame);
+
         } catch (IOException e) {
-            if (running) {
-                System.out.println("Error receiving frame: " + e.getMessage());
-            }
+            System.out.println("Error receiving frame: " + e.getMessage());
         } catch (Exception e) {
             System.out.println("Error parsing frame: " + e.getMessage());
         }
         return null;
+    }
+
+    // Méthode utilitaire pour ajouter les flags de début et de fin
+    private byte[] concatenateFlags(byte[] content) {
+        byte[] framed = new byte[content.length + 2];
+        framed[0] = Frame.FLAG;
+        System.arraycopy(content, 0, framed, 1, content.length);
+        framed[framed.length - 1] = Frame.FLAG;
+        return framed;
     }
 
     public void processFrame(Frame frame) {
@@ -70,7 +93,7 @@ public class Receiver {
         }
 
         try {
-            switch ((char)frame.getType()) {
+            switch ((char) frame.getType()) {
                 case 'C':
                     System.out.println("Received connection request");
                     sendAck(0);
@@ -80,7 +103,7 @@ public class Receiver {
                 case 'I':
                     int frameNum = frame.getNum() & 0b00000111;
                     if (frameNum == expectedFrameNumber) {
-                        String receivedData = binaryToString(frame.getData());
+                        String receivedData = frame.getData();
                         System.out.println("Received frame " + expectedFrameNumber + ": " + receivedData);
                         sendAck(expectedFrameNumber);
                         expectedFrameNumber = (expectedFrameNumber + 1) % 8;
@@ -92,13 +115,20 @@ public class Receiver {
 
                 case 'F':
                     System.out.println("End of transmission received");
-                    sendAck(expectedFrameNumber);
-                    System.out.println("Closing connection...");
-                    close();
+                    int finalFrameNum = frame.getNum() & 0b00000111;
+                    if (finalFrameNum == expectedFrameNumber) {
+                        sendAck(finalFrameNum);
+                        expectedFrameNumber = (expectedFrameNumber + 1) % 8;
+                        System.out.println("Closing connection...");
+                        close();
+                    } else {
+                        System.out.println("Out of sequence for F frame. Expected " + expectedFrameNumber + ", got " + finalFrameNum);
+                        sendRej(expectedFrameNumber);
+                    }
                     break;
 
                 default:
-                    System.out.println("Unknown frame type: " + (char)frame.getType());
+                    System.out.println("Unknown frame type: " + (char) frame.getType());
             }
         } catch (Exception e) {
             System.out.println("Error processing frame: " + e.getMessage());
@@ -109,13 +139,13 @@ public class Receiver {
         try {
             if (!isConnected) return;
 
-            Frame ackFrame = new Frame((byte)'A', (byte)frameNum, "", new CRC());
-            String frameString = ackFrame.buildFrameFromBytes();
-            out.write(frameString.getBytes());
+            Frame ackFrame = new Frame((byte) 'A', (byte) frameNum, "", new CRC());
+            byte[] ackBytes = ackFrame.buildFrame();
+            out.write(ackBytes);
             out.flush();
-            System.out.println("Sent ACK for frame " + frameNum);
+            System.out.println("Sent ACK for frame " + frameNum + "\n");
         } catch (IOException e) {
-            System.out.println("Error sending ACK: " + e.getMessage());
+            System.out.println("\nError sending ACK: " + e.getMessage() + "\n");
         }
     }
 
@@ -123,9 +153,9 @@ public class Receiver {
         try {
             if (!isConnected) return;
 
-            Frame rejFrame = new Frame((byte)'R', (byte)frameNum, "", new CRC());
-            String frameString = rejFrame.buildFrameFromBytes();
-            out.write(frameString.getBytes());
+            Frame rejFrame = new Frame((byte) 'R', (byte) frameNum, "", new CRC());
+            byte[] rejBytes = rejFrame.buildFrame();
+            out.write(rejBytes);
             out.flush();
             System.out.println("Sent REJ for frame " + frameNum);
         } catch (IOException e) {
@@ -152,13 +182,18 @@ public class Receiver {
         }
     }
 
+    // Convertit une chaîne binaire en une chaîne de caractères
     private String binaryToString(String binary) {
         StringBuilder result = new StringBuilder();
         for (int i = 0; i < binary.length(); i += 8) {
-            String byte_str = binary.substring(i, Math.min(i + 8, binary.length()));
-            result.append((char)Integer.parseInt(byte_str, 2));
+            String byteStr = binary.substring(i, Math.min(i + 8, binary.length()));
+            result.append((char) Integer.parseInt(byteStr, 2));
         }
         return result.toString();
+    }
+
+    public boolean isRunning() {
+        return running;
     }
 
     public static void main(String[] args) {

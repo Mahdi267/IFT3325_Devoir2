@@ -1,12 +1,8 @@
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.Socket;
 
 public class Sender {
-    private static final int WINDOW_SIZE = 8;
+    private static final int WINDOW_SIZE = 4; // Réduit de 8 à 4
     private static final int TIMEOUT = 3000;
     private Socket socket;
     private int nextFrameToSend;
@@ -19,6 +15,9 @@ public class Sender {
     private InputStream in;
     private byte[] buffer;
     private Thread ackListenerThread;
+    private boolean fSent = false;
+    private boolean fAcked = false;
+    private final Object ackLock = new Object();
 
     public Sender() {
         this.nextFrameToSend = 0;
@@ -43,18 +42,21 @@ public class Sender {
     }
 
     private void handleTimeout() {
-        System.out.println("Timeout - Resending frames from " + base + " to " + (nextFrameToSend - 1));
-        for (int i = base; i < nextFrameToSend; i++) {
-            if (window[i % WINDOW_SIZE] != null) {
+        System.out.println("Timeout - Resending frames from " + base + " to " + ((nextFrameToSend - 1 + 8) % 8));
+        int i = base;
+        while (i != nextFrameToSend) {
+            Frame frame = window[i % WINDOW_SIZE];
+            if (frame != null) {
                 try {
-                    String frameString = window[i % WINDOW_SIZE].buildFrameFromBytes();
-                    out.write(frameString.getBytes());
+                    byte[] frameBytes = frame.buildFrame();
+                    out.write(frameBytes);
                     out.flush();
-                    System.out.println("Resent frame " + (window[i % WINDOW_SIZE].getNum() & 0b00000111));
+                    System.out.println("Resent frame " + (frame.getNum() & 0b00000111));
                 } catch (IOException e) {
                     System.out.println("Error resending frame: " + e.getMessage());
                 }
             }
+            i = (i + 1) % 8;
         }
         timer.start();
     }
@@ -62,7 +64,8 @@ public class Sender {
     public void connect() {
         try {
             System.out.println("Initiating connection with Go-Back-N...");
-            Frame connFrame = new Frame((byte)'C', "GoBackN", new CRC());
+            CRC crc = new CRC();
+            Frame connFrame = new Frame((byte) 'C', (byte) 0, "Go-Back-N", crc);
             sendFrame(connFrame);
 
             long startTime = System.currentTimeMillis();
@@ -92,68 +95,90 @@ public class Sender {
                 System.out.println("Unable to establish connection. Exiting.");
                 return;
             }
-            startAckListener(); // Démarrer le listener des ACK après la connexion
+            startAckListener(); // Start the ACK listener after the connection is established
         }
 
         try (BufferedReader fileReader = new BufferedReader(new FileReader(filename))) {
-            String line;
-            while ((line = fileReader.readLine()) != null && isConnected) {
-                String binaryData = stringToBinary(line);
+            boolean endOfFileReached = false;
+            String nextLine = null;
 
-                // Envoyer autant de trames que possible jusqu'à remplir la fenêtre
-                while (canSendNextFrame() && (line != null)) {
-                    byte num = (byte) (nextFrameToSend % WINDOW_SIZE);
-                    Frame frame = new Frame((byte) 'I', num, binaryData, new CRC());
-                    sendFrame(frame);
-                    line = fileReader.readLine();
-                    if (line != null) {
-                        binaryData = stringToBinary(line);
+            // Lire la première ligne du fichier
+            nextLine = fileReader.readLine();
+            if (nextLine == null) {
+                // Le fichier est vide, envoyer directement la trame de fin
+                Frame endFrame = new Frame((byte) 'F', (byte) (nextFrameToSend & 0x07), "", new CRC());
+                sendFrame(endFrame);
+                fSent = true;
+
+                // Attendre l'ACK de la trame 'F'
+                synchronized (ackLock) {
+                    while (!fAcked) {
+                        ackLock.wait();
                     }
                 }
+                return;
             }
 
-            // Envoyer la trame de fin
-            Frame endFrame = new Frame((byte) 'F', (byte) 0, "", new CRC());
-            sendFrame(endFrame);
+            while (true) {
+                // Envoyer des trames si la fenêtre n'est pas pleine et que le fichier n'est pas terminé
+                while (canSendNextFrame() && !endOfFileReached) {
+                    byte num = (byte) (nextFrameToSend & 0x07);
+                    CRC crc = new CRC();
+                    Frame frame = new Frame((byte) 'I', num, nextLine, crc);
+                    sendFrame(frame);
 
-        } catch (IOException e) {
-            System.out.println("Error reading file: " + e.getMessage());
-            e.printStackTrace();
+                    // Lire la prochaine ligne pour la prochaine itération
+                    nextLine = fileReader.readLine();
+                    if (nextLine == null) {
+                        endOfFileReached = true;
+                    }
+                }
+
+                // Vérifier si le fichier est terminé et toutes les trames sont acquittées
+                if (endOfFileReached && base == nextFrameToSend) {
+                    // Envoyer la trame de fin
+                    Frame endFrame = new Frame((byte) 'F', (byte) (nextFrameToSend & 0x07), "", new CRC());
+                    sendFrame(endFrame);
+                    fSent = true;
+
+                    // Attendre l'ACK de la trame 'F'
+                    synchronized (ackLock) {
+                        while (!fAcked) {
+                            ackLock.wait();
+                        }
+                    }
+                    break;
+                }
+
+                // Attendre un petit moment avant de vérifier à nouveau
+                Thread.sleep(10);
+            }
+
+        } catch (IOException | InterruptedException e) {
+            System.out.println("Error: " + e.getMessage());
         } finally {
             close();
         }
     }
 
-    private String stringToBinary(String input) {
-        StringBuilder result = new StringBuilder();
-        for (char c : input.toCharArray()) {
-            result.append(String.format("%8s", Integer.toBinaryString(c)).replace(' ', '0'));
-        }
-        return result.toString();
-    }
-
     public synchronized void sendFrame(Frame frame) {
         try {
-            String frameString = frame.buildFrameFromBytes();
-            byte[] frameBytes = frameString.getBytes();
+            byte[] frameBytes = frame.buildFrame();
             out.write(frameBytes);
             out.flush();
 
-            if (frame.getType() == 'I') {
+            if (frame.getType() == 'I' || frame.getType() == 'F') {
                 window[nextFrameToSend % WINDOW_SIZE] = frame;
-                System.out.println("Sent I-frame " + (frame.getNum() & 0b00000111) +
-                        " (Data length: " + frame.getData().length() + ")");
+                System.out.println("Sent frame " + (frame.getNum() & 0b00000111) +
+                        " (Type: " + (char) frame.getType() + ", Data length: " + frame.getData().length() + ")");
 
                 if (base == nextFrameToSend) {
                     timer.start();
                 }
-                nextFrameToSend++;
-
-                // Ne pas attendre l'ACK ici ; continuer à envoyer des trames dans la fenêtre
+                nextFrameToSend = (nextFrameToSend + 1) % 8;
             } else {
-                System.out.println("Sent control frame: Type=" + (char)frame.getType() +
+                System.out.println("Sent control frame: Type=" + (char) frame.getType() +
                         ", Num=" + (frame.getNum() & 0b00000111));
-
                 if (frame.getType() == 'C') {
                     waitForConnectionAck();
                 }
@@ -188,9 +213,18 @@ public class Sender {
     private synchronized void handleAck(Frame ackFrame) {
         int ackNum = ackFrame.getNum() & 0b00000111;
         System.out.println("Received ACK for frame " + ackNum);
-        if ((base <= ackNum && ackNum < nextFrameToSend) ||
-                (base > nextFrameToSend && (ackNum < nextFrameToSend || ackNum >= base))) {
-            base = (ackNum + 1) % WINDOW_SIZE;
+
+        // Vérifier si l'ACK est pour la trame 'F'
+        if (fSent && ackNum == ((nextFrameToSend - 1 + 8) % 8)) {
+            fAcked = true;
+            synchronized (ackLock) {
+                ackLock.notifyAll();
+            }
+        }
+
+        // Gestion des ACK pour les trames de données
+        if (isSeqNumBetween(base, (nextFrameToSend - 1 + 8) % 8, ackNum)) {
+            base = (ackNum + 1) % 8;
             if (base == nextFrameToSend) {
                 timer.stop();
             } else {
@@ -205,24 +239,25 @@ public class Sender {
         System.out.println("Received REJ for frame " + rejNum);
         timer.stop();
         base = rejNum;
-        nextFrameToSend = rejNum;
 
-        // Retransmettre les trames à partir de rejNum
+        // Retransmettre les trames à partir de rejNum jusqu'à nextFrameToSend - 1
         System.out.println("Retransmitting from frame " + rejNum);
-        for (int i = base; i < base + WINDOW_SIZE && i < nextFrameToSend; i++) {
+        int i = base;
+        while (i != nextFrameToSend) {
             Frame frame = window[i % WINDOW_SIZE];
             if (frame != null) {
                 try {
-                    String frameString = frame.buildFrameFromBytes();
-                    out.write(frameString.getBytes());
+                    byte[] frameBytes = frame.buildFrame();
+                    out.write(frameBytes);
                     out.flush();
                     System.out.println("Retransmitted frame " + (frame.getNum() & 0b00000111));
                 } catch (IOException e) {
                     System.out.println("Error retransmitting frame: " + e.getMessage());
                 }
             }
+            i = (i + 1) % 8;
         }
-        timer.start();
+        timer.start(); // Redémarrer le timer après la retransmission
     }
 
     private void waitForConnectionAck() {
@@ -245,13 +280,37 @@ public class Sender {
 
     public Frame receiveFrame() {
         try {
-            if (in.available() > 0) {
-                int bytesRead = in.read(buffer);
-                if (bytesRead > 0) {
-                    String frameData = new String(buffer, 0, bytesRead);
-                    return Frame.unBuildFrame(frameData);
+            // Lire jusqu'au flag de début
+            ByteArrayOutputStream frameBuffer = new ByteArrayOutputStream();
+            int b;
+            boolean startFlagFound = false;
+
+            while ((b = in.read()) != -1) {
+                if (b == Frame.FLAG) {
+                    startFlagFound = true;
+                    break;
                 }
             }
+
+            if (!startFlagFound) {
+                return null;
+            }
+
+            // Lire jusqu'au flag de fin
+            while ((b = in.read()) != -1) {
+                if (b == Frame.FLAG) {
+                    break;
+                }
+                frameBuffer.write(b);
+            }
+
+            if (b != Frame.FLAG) {
+                throw new Exception("Trame invalide : flag de fin manquant.");
+            }
+
+            byte[] frameContent = frameBuffer.toByteArray();
+            return Frame.parseFrame(concatenateFlags(frameContent));
+
         } catch (IOException e) {
             System.out.println("Error receiving frame: " + e.getMessage());
         } catch (Exception e) {
@@ -260,8 +319,17 @@ public class Sender {
         return null;
     }
 
+    // Méthode utilitaire pour ajouter les flags de début et de fin
+    private byte[] concatenateFlags(byte[] content) {
+        byte[] framed = new byte[content.length + 2];
+        framed[0] = Frame.FLAG;
+        System.arraycopy(content, 0, framed, 1, content.length);
+        framed[framed.length - 1] = Frame.FLAG;
+        return framed;
+    }
+
     private boolean canSendNextFrame() {
-        return (nextFrameToSend - base) < WINDOW_SIZE;
+        return ((nextFrameToSend - base + 8) % 8) < WINDOW_SIZE;
     }
 
     public synchronized void close() {
@@ -281,6 +349,19 @@ public class Sender {
             System.out.println("Sender closed");
         } catch (IOException e) {
             System.out.println("Error closing sender: " + e.getMessage());
+        }
+    }
+
+    private boolean isSeqNumBetween(int start, int end, int num) {
+        start = (start + 8) % 8;
+        end = (end + 8) % 8;
+        num = (num + 8) % 8;
+
+        if (start <= end) {
+            return num >= start && num <= end;
+        } else {
+            // Cas où la séquence a bouclé
+            return num >= start || num <= end;
         }
     }
 

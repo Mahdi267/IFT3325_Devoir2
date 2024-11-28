@@ -1,3 +1,12 @@
 Première ligne de test
 Deuxième ligne avec 11111 pour tester le bit stuffing
 Troisième ligne
+Quatrième ligne
+teste
+fin de teste
+lol
+1234567
+11123123123123123
+100101010101010111010111
+bonjour
+Mahdi Tazerout
