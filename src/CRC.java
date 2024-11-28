@@ -1,16 +1,47 @@
+/**
+ * Classe pour le calcul et la vérification du CRC (Cyclic Redundancy Check) en utilisant le polynôme CRC-CCITT.
+ * Le polynôme utilisé est x^16 + x^12 + x^5 + 1 (0x11021).
+ *
+ * <p>Cette classe permet de calculer le CRC pour une chaîne binaire donnée et de définir ou obtenir le CRC calculé.</p>
+ */
 public class CRC {
-    // CRC-CCITT (x^16 + x^12 + x^5 +1), pour faire la division
-    private static final String crc_ccitt = "10001000000100001";
-    private static final int crc_ccitt_length = crc_ccitt.length();
+    /**
+     * Polynôme CRC-CCITT (x^16 + x^12 + x^5 + 1) utilisé pour la division Mod 2.
+     * Représenté sous forme de chaîne binaire.
+     */
+    private static final String CRC_CCITT = "10001000000100001"; // 17 bits
+
+    /**
+     * Longueur du polynôme CRC-CCITT.
+     */
+    private static final int CRC_CCITT_LENGTH = CRC_CCITT.length();
+
+    /**
+     * Les bits du CRC calculé, représentés sous forme de chaîne binaire.
+     */
     private String crcBits;
 
-    // Constructor
-    public CRC(){}
+    /**
+     * Constructeur par défaut de la classe CRC.
+     */
+    public CRC() {}
 
-    // Getter et Setter
+    /**
+     * Obtient les bits du CRC calculé.
+     *
+     * @return Les bits du CRC sous forme de chaîne binaire.
+     */
     public String getCrcBits() {
         return crcBits;
     }
+
+    /**
+     * Définit les bits du CRC calculé.
+     * Valide que la chaîne fournie est de longueur 16 et ne contient que des caractères '0' ou '1'.
+     *
+     * @param crcBits Les bits du CRC sous forme de chaîne binaire.
+     * @throws IllegalArgumentException Si la chaîne fournie n'est pas valide.
+     */
     public void setCrcBits(String crcBits) {
         if (crcBits.length() != 16 || !crcBits.matches("[01]+")) {
             throw new IllegalArgumentException("CRC invalide.");
@@ -18,8 +49,14 @@ public class CRC {
         this.crcBits = crcBits;
     }
 
-    // Permet d'effectuer l'oppération Xor
-    static String Xor (String a, String b) {
+    /**
+     * Effectue une opération XOR (exclusive OR) entre deux chaînes binaires de même longueur.
+     *
+     * @param a La première chaîne binaire.
+     * @param b La deuxième chaîne binaire.
+     * @return Le résultat de l'opération XOR sous forme de chaîne binaire.
+     */
+    static String xor(String a, String b) {
         StringBuilder result = new StringBuilder();
         int n = a.length();
 
@@ -29,18 +66,23 @@ public class CRC {
         return result.toString();
     }
 
-    // Permet de calculer la division Mod 2 de deux nombres binaires
-    static String Mod2Div(String dividend) {
+    /**
+     * Effectue la division Mod 2 (bitwise) d'un dividende binaire par le polynôme CRC-CCITT.
+     *
+     * @param dividend La chaîne binaire représentant le dividende.
+     * @return Le reste de la division Mod 2 sous forme de chaîne binaire.
+     */
+    static String mod2Div(String dividend) {
         int n = dividend.length();
-        int divisorLength = crc_ccitt.length(); // 17 bits
-        String divisor = crc_ccitt;
+        int divisorLength = CRC_CCITT_LENGTH; // 17 bits
+        String divisor = CRC_CCITT;
         String tmp = dividend.substring(0, divisorLength);
 
         while (divisorLength < n) {
             if (tmp.charAt(0) == '1') {
-                tmp = Xor(divisor, tmp);
+                tmp = xor(divisor, tmp);
             } else {
-                tmp = Xor("0".repeat(divisor.length()), tmp);
+                tmp = xor("0".repeat(divisor.length()), tmp);
             }
 
             // Ajouter le prochain bit du dividende
@@ -50,22 +92,29 @@ public class CRC {
 
         // Dernière itération pour obtenir le reste final
         if (tmp.charAt(0) == '1') {
-            tmp = Xor(divisor, tmp);
+            tmp = xor(divisor, tmp);
         } else {
-            tmp = Xor("0".repeat(divisor.length()), tmp);
+            tmp = xor("0".repeat(divisor.length()), tmp);
         }
 
         // Le reste final est de 16 bits
         return tmp.substring(1);
     }
 
-    public String computeCRC(String data){
-        int zerosToAdd = crc_ccitt_length - 1;
+    /**
+     * Calcule le CRC pour une chaîne de données binaires donnée en utilisant le polynôme CRC-CCITT.
+     *
+     * @param data La chaîne binaire sur laquelle calculer le CRC.
+     * @return Une chaîne binaire représentant les bits du CRC calculé.
+     */
+    public String computeCRC(String data) {
+        int zerosToAdd = CRC_CCITT_LENGTH - 1;
 
         // Ajouter les zéros nécessaires à la fin de la chaîne
         String binaryData = data + "0".repeat(zerosToAdd);
 
-        String computedCRC = String.format("%16s", Mod2Div(binaryData)).replace(' ', '0');
+        // Effectuer la division Mod 2
+        String computedCRC = String.format("%16s", mod2Div(binaryData)).replace(' ', '0');
         this.crcBits = computedCRC;
 
         return computedCRC;

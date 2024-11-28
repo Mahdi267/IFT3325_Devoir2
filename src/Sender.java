@@ -1,24 +1,96 @@
 import java.io.*;
 import java.net.Socket;
 
+/**
+ * Classe représentant un émetteur (Sender) pour la transmission de données utilisant le protocole Go-Back-N.
+ * Gère l'envoi de trames, la gestion de la fenêtre de transmission, le traitement des accusés de réception (ACK)
+ * et des rejets (REJ), ainsi que la gestion des temporisations pour la retransmission des trames.
+ */
 public class Sender {
+    /**
+     * Taille de la fenêtre de transmission.
+     */
     private static final int WINDOW_SIZE = 4; // Réduit de 8 à 4
+
+    /**
+     * Durée du timeout en millisecondes pour la retransmission des trames.
+     */
     private static final int TIMEOUT = 3000;
+
+    /**
+     * Socket de connexion vers le récepteur.
+     */
     private Socket socket;
+
+    /**
+     * Numéro de la prochaine trame à envoyer.
+     */
     private int nextFrameToSend;
+
+    /**
+     * Numéro de la première trame non encore acquittée dans la fenêtre.
+     */
     private int base;
+
+    /**
+     * Tableau représentant la fenêtre de transmission contenant les trames envoyées mais non encore acquittées.
+     */
     private Frame[] window;
+
+    /**
+     * Timer utilisé pour gérer les temporisations des trames envoyées.
+     */
     private Timer timer;
+
+    /**
+     * Nom du fichier contenant les données à envoyer.
+     */
     private String filename;
+
+    /**
+     * Indique si une connexion est établie avec le récepteur.
+     */
     private boolean isConnected;
+
+    /**
+     * Flux de sortie vers le récepteur.
+     */
     private OutputStream out;
+
+    /**
+     * Flux d'entrée depuis le récepteur.
+     */
     private InputStream in;
+
+    /**
+     * Tampon utilisé pour la lecture des données.
+     */
     private byte[] buffer;
+
+    /**
+     * Thread dédié à l'écoute des accusés de réception (ACK) et des rejets (REJ) depuis le récepteur.
+     */
     private Thread ackListenerThread;
+
+    /**
+     * Indique si la trame de fin ('F') a été envoyée.
+     */
     private boolean fSent = false;
+
+    /**
+     * Indique si la trame de fin ('F') a été acquittée.
+     */
     private boolean fAcked = false;
+
+    /**
+     * Objet utilisé pour synchroniser l'attente de l'acquittement de la trame de fin.
+     */
     private final Object ackLock = new Object();
 
+    /**
+     * Constructeur par défaut du Sender.
+     * Initialise les variables nécessaires à la transmission.
+     */
     public Sender() {
         this.nextFrameToSend = 0;
         this.base = 0;
@@ -29,6 +101,13 @@ public class Sender {
         this.timer.setTimeoutHandler(this::handleTimeout);
     }
 
+    /**
+     * Initialise le Sender en établissant une connexion avec le récepteur.
+     *
+     * @param hostName Le nom d'hôte ou l'adresse IP du récepteur.
+     * @param port     Le port de connexion du récepteur.
+     * @param filename Le nom du fichier à envoyer.
+     */
     public void initialize(String hostName, int port, String filename) {
         this.filename = filename;
         try {
@@ -41,6 +120,10 @@ public class Sender {
         }
     }
 
+    /**
+     * Gère le timeout en cas de non-acquittement des trames envoyées.
+     * Retransmet toutes les trames non acquittées dans la fenêtre de transmission.
+     */
     private void handleTimeout() {
         System.out.println("Timeout - Resending frames from " + base + " to " + ((nextFrameToSend - 1 + 8) % 8));
         int i = base;
@@ -61,6 +144,9 @@ public class Sender {
         timer.start();
     }
 
+    /**
+     * Établit une connexion avec le récepteur en envoyant une trame de connexion et en attendant un accusé de réception.
+     */
     public void connect() {
         try {
             System.out.println("Initiating connection with Go-Back-N...");
@@ -88,6 +174,10 @@ public class Sender {
         }
     }
 
+    /**
+     * Lit les données du fichier spécifié et les envoie au récepteur en utilisant le protocole Go-Back-N.
+     * Gère l'envoi des trames, la gestion de la fenêtre de transmission, et l'envoi de la trame de fin.
+     */
     public void readData() {
         if (!isConnected) {
             connect();
@@ -122,7 +212,7 @@ public class Sender {
             while (true) {
                 // Envoyer des trames si la fenêtre n'est pas pleine et que le fichier n'est pas terminé
                 while (canSendNextFrame() && !endOfFileReached) {
-                    byte num = (byte) (nextFrameToSend & 0x07);
+                    byte num = (byte) (nextFrameToSend & 0b00000111);
                     CRC crc = new CRC();
                     Frame frame = new Frame((byte) 'I', num, nextLine, crc);
                     sendFrame(frame);
@@ -161,6 +251,11 @@ public class Sender {
         }
     }
 
+    /**
+     * Envoie une trame au récepteur et met à jour la fenêtre de transmission si nécessaire.
+     *
+     * @param frame La trame à envoyer.
+     */
     public synchronized void sendFrame(Frame frame) {
         try {
             byte[] frameBytes = frame.buildFrame();
@@ -189,6 +284,9 @@ public class Sender {
         }
     }
 
+    /**
+     * Démarre un thread dédié à l'écoute des accusés de réception (ACK) et des rejets (REJ) depuis le récepteur.
+     */
     private void startAckListener() {
         ackListenerThread = new Thread(() -> {
             while (isConnected) {
@@ -210,6 +308,12 @@ public class Sender {
         ackListenerThread.start();
     }
 
+    /**
+     * Gère la réception d'un accusé de réception (ACK).
+     * Met à jour la fenêtre de transmission en fonction du numéro de trame acquittée.
+     *
+     * @param ackFrame La trame ACK reçue.
+     */
     private synchronized void handleAck(Frame ackFrame) {
         int ackNum = ackFrame.getNum() & 0b00000111;
         System.out.println("Received ACK for frame " + ackNum);
@@ -234,6 +338,12 @@ public class Sender {
         }
     }
 
+    /**
+     * Gère la réception d'un rejet (REJ) pour une trame spécifique.
+     * Retransmet toutes les trames à partir de la trame rejetée.
+     *
+     * @param rejFrame La trame REJ reçue.
+     */
     private synchronized void handleRejection(Frame rejFrame) {
         int rejNum = rejFrame.getNum() & 0b00000111;
         System.out.println("Received REJ for frame " + rejNum);
@@ -260,6 +370,10 @@ public class Sender {
         timer.start(); // Redémarrer le timer après la retransmission
     }
 
+    /**
+     * Attend l'acquittement de la trame de connexion ('C') envoyée.
+     * Bloque jusqu'à ce que l'ACK soit reçu ou que le timeout soit atteint.
+     */
     private void waitForConnectionAck() {
         long startTime = System.currentTimeMillis();
         while (System.currentTimeMillis() - startTime < TIMEOUT) {
@@ -278,6 +392,11 @@ public class Sender {
         }
     }
 
+    /**
+     * Reçoit une trame depuis l'entrée du socket.
+     *
+     * @return Une instance de la classe `Frame` représentant la trame reçue, ou `null` en cas d'erreur.
+     */
     public Frame receiveFrame() {
         try {
             // Lire jusqu'au flag de début
@@ -319,7 +438,12 @@ public class Sender {
         return null;
     }
 
-    // Méthode utilitaire pour ajouter les flags de début et de fin
+    /**
+     * Ajoute les flags de début et de fin à une trame de contenu.
+     *
+     * @param content Le contenu de la trame sans flags.
+     * @return Un tableau de bytes représentant la trame complète avec flags.
+     */
     private byte[] concatenateFlags(byte[] content) {
         byte[] framed = new byte[content.length + 2];
         framed[0] = Frame.FLAG;
@@ -328,10 +452,19 @@ public class Sender {
         return framed;
     }
 
+    /**
+     * Vérifie si la fenêtre de transmission peut accepter une nouvelle trame à envoyer.
+     *
+     * @return `true` si une nouvelle trame peut être envoyée, sinon `false`.
+     */
     private boolean canSendNextFrame() {
         return ((nextFrameToSend - base + 8) % 8) < WINDOW_SIZE;
     }
 
+    /**
+     * Ferme toutes les ressources associées au Sender, y compris les flux, les sockets et les threads.
+     * Arrête également le timer de temporisation.
+     */
     public synchronized void close() {
         try {
             isConnected = false;
@@ -352,6 +485,15 @@ public class Sender {
         }
     }
 
+    /**
+     * Vérifie si un numéro de séquence est compris entre deux autres numéros de séquence.
+     * Prend en compte le roulement des numéros de séquence dans le protocole Go-Back-N.
+     *
+     * @param start Le numéro de séquence de départ.
+     * @param end   Le numéro de séquence de fin.
+     * @param num   Le numéro de séquence à vérifier.
+     * @return `true` si le numéro est compris entre `start` et `end`, sinon `false`.
+     */
     private boolean isSeqNumBetween(int start, int end, int num) {
         start = (start + 8) % 8;
         end = (end + 8) % 8;
@@ -365,6 +507,17 @@ public class Sender {
         }
     }
 
+    /**
+     * Point d'entrée principal pour le Sender.
+     * Initialise et démarre le processus d'envoi de données en mode émetteur.
+     *
+     * @param args Arguments de la ligne de commande.
+     *             Doit contenir quatre arguments :
+     *             <hostname> : Nom d'hôte ou adresse IP du récepteur.
+     *             <port> : Port de connexion du récepteur.
+     *             <filename> : Nom du fichier à envoyer.
+     *             <0> : Argument spécifique au protocole Go-Back-N (doit être "0").
+     */
     public static void main(String[] args) {
         if (args.length != 4) {
             System.out.println("Usage: java Sender <hostname> <port> <filename> <0>");
