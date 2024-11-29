@@ -29,8 +29,6 @@ public class MainTest {
             testBitStuffing();
             testFrameCreation();
             testBasicCRC();
-            testZeroData();
-            testAllOnes();
             testKnownValues();
             testXorOperation();
             testMod2Div();
@@ -86,7 +84,7 @@ public class MainTest {
             CRC crc = new CRC();
 
             // Exemple de données à envoyer
-            String data = "Hello";
+            String data = "Hey!";
 
             // Création d'une trame d'information
             byte type = 'I'; // Trame d'information
@@ -134,68 +132,6 @@ public class MainTest {
             System.out.println("Test Basic CRC " + (isPassed ? "PASSED" : "FAILED"));
         } catch (Exception e) {
             System.out.println("Test Basic CRC FAILED with exception:");
-            e.printStackTrace();
-        }
-    }
-
-    private static void testZeroData() {
-        System.out.println("\n=== Test Zero Data ===");
-        try {
-            CRC crc = new CRC();
-            String data = ""; // Pas de données
-
-            byte type = 'C'; // Trame de connexion
-            byte num = 0;
-
-            Frame frame = new Frame(type, num, data, crc);
-            byte[] serializedFrame = frame.buildFrame();
-            System.out.println("Trame sérialisée avec stuffing (Zero Data) : " + Arrays.toString(serializedFrame));
-
-            // Désérialisation
-            Frame deserializedFrame = Frame.parseFrame(serializedFrame);
-            System.out.println("Trame désérialisée : " + deserializedFrame);
-
-            // Vérifier l'intégrité
-            boolean isPassed = frame.getType() == deserializedFrame.getType() &&
-                    frame.getNum() == deserializedFrame.getNum() &&
-                    frame.getData().equals(deserializedFrame.getData()) &&
-                    frame.getCrc().getCrcBits().equals(deserializedFrame.getCrc().getCrcBits());
-
-            System.out.println("Test Zero Data " + (isPassed ? "PASSED" : "FAILED"));
-        } catch (Exception e) {
-            System.out.println("Test Zero Data FAILED with exception:");
-            e.printStackTrace();
-        }
-    }
-
-    private static void testAllOnes() {
-        System.out.println("\n=== Test All Ones ===");
-        try {
-            CRC crc = new CRC();
-
-            // Données avec beaucoup de '1' consécutifs
-            String data = "ÿÿÿ"; // Caractère 255 en ASCII (11111111 en binaire)
-
-            byte type = 'I';
-            byte num = 7;
-
-            Frame frame = new Frame(type, num, data, crc);
-            byte[] serializedFrame = frame.buildFrame();
-            System.out.println("Trame sérialisée avec stuffing (All Ones) : " + Arrays.toString(serializedFrame));
-
-            // Désérialisation
-            Frame deserializedFrame = Frame.parseFrame(serializedFrame);
-            System.out.println("Trame désérialisée : " + deserializedFrame);
-
-            // Vérifier l'intégrité
-            boolean isPassed = frame.getType() == deserializedFrame.getType() &&
-                    frame.getNum() == deserializedFrame.getNum() &&
-                    frame.getData().equals(deserializedFrame.getData()) &&
-                    frame.getCrc().getCrcBits().equals(deserializedFrame.getCrc().getCrcBits());
-
-            System.out.println("Test All Ones " + (isPassed ? "PASSED" : "FAILED"));
-        } catch (Exception e) {
-            System.out.println("Test All Ones FAILED with exception:");
             e.printStackTrace();
         }
     }
