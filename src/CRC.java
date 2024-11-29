@@ -1,8 +1,5 @@
 /**
- * Classe pour le calcul et la vérification du CRC (Cyclic Redundancy Check) en utilisant le polynôme CRC-CCITT.
- * Le polynôme utilisé est x^16 + x^12 + x^5 + 1 (0x11021).
- *
- * <p>Cette classe permet de calculer le CRC pour une chaîne binaire donnée et de définir ou obtenir le CRC calculé.</p>
+ * Classe pour le calcul du CRC (Cyclic Redundancy Check) en utilisant le polynôme CRC-CCITT.
  */
 public class CRC {
     /**
@@ -107,7 +104,7 @@ public class CRC {
      * @param data La chaîne binaire sur laquelle calculer le CRC.
      * @return Une chaîne binaire représentant les bits du CRC calculé.
      */
-    public String computeCRC(String data) {
+    public static String computeCRC(String data) {
         int zerosToAdd = CRC_CCITT_LENGTH - 1;
 
         // Ajouter les zéros nécessaires à la fin de la chaîne
@@ -115,7 +112,6 @@ public class CRC {
 
         // Effectuer la division Mod 2
         String computedCRC = String.format("%16s", mod2Div(binaryData)).replace(' ', '0');
-        this.crcBits = computedCRC;
 
         return computedCRC;
     }

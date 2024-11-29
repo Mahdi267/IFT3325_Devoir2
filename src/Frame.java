@@ -102,7 +102,8 @@ public class Frame {
                 stringToBinary(data);
 
         // Calculer le CRC
-        String crcStr = computeCRC(combined);
+        String crcStr = CRC.computeCRC(combined);
+        this.crc.setCrcBits(crcStr); // Mettre à jour crcBits
         combined += crcStr;
 
         // Appliquer le bit stuffing
@@ -178,7 +179,7 @@ public class Frame {
         // Extraire le CRC
         String crcStr = unstuffed.substring(unstuffed.length() - 16);
         CRC crc = new CRC();
-        crc.setCrcBits(crcStr);
+        crc.setCrcBits(crcStr); // Conserver le crcBits extrait
 
         // Extraire les données
         String dataBits = unstuffed.substring(16, unstuffed.length() - 16);
@@ -186,9 +187,11 @@ public class Frame {
         // Combiner Type, Num et Data pour le calcul du CRC
         String combinedData = typeStr + numStr + dataBits;
 
-        // Calculer le CRC
-        String computedCRC = crc.computeCRC(combinedData);
-        if (!computedCRC.equals(crc.getCrcBits())) {
+        // Calculer le CRC pour vérifier l'intégrité
+        String computedCRC = CRC.computeCRC(combinedData);
+
+        // Vérifier si le CRC correspond
+        if (!computedCRC.equals(crcStr)) {
             throw new Exception("Erreur de CRC : trame corrompue.");
         }
 
@@ -205,7 +208,7 @@ public class Frame {
      * @return Une chaîne binaire représentant les bits du CRC.
      */
     public String computeCRC(String data) {
-        return crc.computeCRC(data);
+        return CRC.computeCRC(data);
     }
 
     /**
