@@ -236,7 +236,7 @@ public class MainTest {
             String b = "1011";
             String expected = "0110"; // 1^1=0, 1^0=1, 0^1=1, 1^1=0
 
-            String result = CRC.Xor(a, b);
+            String result = CRC.xor(a, b);
             System.out.println("A: " + a);
             System.out.println("B: " + b);
             System.out.println("A XOR B: " + result);
@@ -257,7 +257,7 @@ public class MainTest {
             String dividend = "11010011101100" + "0000000000000000"; // Ajouter 16 zéros
             String expectedRemainder = crc.computeCRC("11010011101100"); // Le reste attendu est le CRC calculé
 
-            String remainder = CRC.Mod2Div(dividend);
+            String remainder = CRC.mod2Div(dividend);
             System.out.println("Dividend: " + dividend);
             System.out.println("Remainder Calculé: " + remainder);
             System.out.println("Test Mod2Div " + (remainder.equals(expectedRemainder) ? "PASSED" : "FAILED"));
