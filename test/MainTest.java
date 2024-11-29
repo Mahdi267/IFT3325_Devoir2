@@ -143,7 +143,7 @@ public class MainTest {
 
             // Exemple avec des données connues et un CRC attendu
             String data1 = "11010011101100";
-            String expectedCRC1 = crc.computeCRC(data1); // Calculer le CRC attendu
+            String expectedCRC1 = "1111010111110011"; // Calculer le CRC attendu
 
             String computedCRC1 = crc.computeCRC(data1);
             System.out.println("Données: " + data1);
@@ -152,7 +152,7 @@ public class MainTest {
 
             // Exemple 2
             String data2 = "1010101010101010";
-            String expectedCRC2 = crc.computeCRC(data2);
+            String expectedCRC2 = "1110011000010101";
 
             String computedCRC2 = crc.computeCRC(data2);
             System.out.println("\nDonnées: " + data2);
